@@ -1,0 +1,145 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
+from typing import Optional
+
+from app.database import get_db
+from app.dependencies import get_current_user, require_role
+from app.modules.usuarios.models import Usuario  # ← Agregar importación de Usuario
+from app.modules.notificaciones.models import NotificacionToken, PreferenciaNotificacion
+from app.modules.notificaciones.services import NotificationService
+
+router = APIRouter(prefix="/api/notificaciones", tags=["Notificaciones"])
+
+
+@router.post("/token", status_code=status.HTTP_201_CREATED)
+async def registrar_token_fcm(
+    token_fcm: str,
+    plataforma: str,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """CU07 - Guardar token FCM del dispositivo"""
+    # Verificar si ya existe el token
+    existing = db.query(NotificacionToken).filter(
+        NotificacionToken.token_fcm == token_fcm
+    ).first()
+    
+    if existing:
+        existing.activo = True
+        existing.plataforma = plataforma
+        existing.fecha_ultima_uso = func.now()
+    else:
+        # Verificar si el usuario ya tiene un token para esta plataforma
+        old_token = db.query(NotificacionToken).filter(
+            NotificacionToken.id_usuario == current_user.id,
+            NotificacionToken.plataforma == plataforma,
+            NotificacionToken.activo == True
+        ).first()
+        
+        if old_token:
+            old_token.activo = False
+        
+        new_token = NotificacionToken(
+            id_usuario=current_user.id,
+            token_fcm=token_fcm,
+            plataforma=plataforma
+        )
+        db.add(new_token)
+    
+    db.commit()
+    return {"message": "Token registrado exitosamente"}
+
+
+@router.get("/configuracion")
+async def get_preferencias(
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Obtener preferencias de notificación del usuario"""
+    prefs = db.query(PreferenciaNotificacion).filter(
+        PreferenciaNotificacion.id_usuario == current_user.id
+    ).first()
+    
+    if not prefs:
+        # Crear preferencias por defecto
+        prefs = PreferenciaNotificacion(
+            id_usuario=current_user.id,
+            actualizaciones_servicio=True,
+            promociones=False,
+            estado_pago=True,
+            recordatorios=True
+        )
+        db.add(prefs)
+        db.commit()
+    
+    return {
+        'actualizaciones_servicio': prefs.actualizaciones_servicio,
+        'promociones': prefs.promociones,
+        'estado_pago': prefs.estado_pago,
+        'recordatorios': prefs.recordatorios
+    }
+
+
+@router.put("/configuracion")
+async def update_preferencias(
+    actualizaciones_servicio: Optional[bool] = None,
+    promociones: Optional[bool] = None,
+    estado_pago: Optional[bool] = None,
+    recordatorios: Optional[bool] = None,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Actualizar preferencias de notificación"""
+    prefs = db.query(PreferenciaNotificacion).filter(
+        PreferenciaNotificacion.id_usuario == current_user.id
+    ).first()
+    
+    if not prefs:
+        prefs = PreferenciaNotificacion(id_usuario=current_user.id)
+        db.add(prefs)
+    
+    # Actualizar campos proporcionados
+    if actualizaciones_servicio is not None:
+        prefs.actualizaciones_servicio = actualizaciones_servicio
+    if promociones is not None:
+        prefs.promociones = promociones
+    if estado_pago is not None:
+        prefs.estado_pago = estado_pago
+    if recordatorios is not None:
+        prefs.recordatorios = recordatorios
+    
+    prefs.fecha_actualizacion = func.now()
+    db.commit()
+    
+    return {"message": "Preferencias actualizadas"}
+
+
+@router.post("/enviar")
+async def enviar_notificacion_manual(
+    usuario_id: int,
+    titulo: str,
+    mensaje: str,
+    current_user: Usuario = Depends(require_role(['admin'])),
+    db: Session = Depends(get_db)
+):
+    """Enviar notificación push manual (solo admin)"""
+    # TODO: Implementar envío real
+    service = NotificationService()
+    
+    # Obtener tokens activos del usuario
+    tokens = db.query(NotificacionToken).filter(
+        NotificacionToken.id_usuario == usuario_id,
+        NotificacionToken.activo == True
+    ).all()
+    
+    resultados = []
+    for token in tokens:
+        exito = await service.send_push_notification(
+            token=token.token_fcm,
+            title=titulo,
+            body=mensaje
+        )
+        resultados.append({'token_id': token.id, 'exitoso': exito})
+    
+    return {"enviados": len([r for r in resultados if r['exitoso']]), "detalles": resultados}

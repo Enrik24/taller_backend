@@ -1,0 +1,50 @@
+# Entorno virtual
+venv/
+env/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Base de datos
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos de entorno
+.env
+.env.local
+*.env
+
+# Variables de sistema
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Archivos temporales
+tmp/
+temp/
+*.tmp
+
+# Archivos de migration de Alembic (pueden requerir ajustes)
+alembic/versions/*.py
+!alembic/versions/.gitkeep
