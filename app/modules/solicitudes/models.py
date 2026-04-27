@@ -49,6 +49,7 @@ class Solicitud(Base):
     tecnico = relationship('Tecnico', back_populates='solicitudes_asignadas')
     evidencias = relationship('Evidencia', back_populates='solicitud', cascade='all, delete-orphan')
     pago = relationship('Pago', back_populates='solicitud', uselist=False, cascade='all, delete-orphan')
+    historial_notificaciones = relationship('HistorialNotificacion', back_populates='solicitud')
     
     __table_args__ = (
         Index('idx_solicitud_estado', 'estado'),

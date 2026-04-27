@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.exc import IntegrityError
+import logging
 
 from app.config import settings
 from app.database import engine, Base
@@ -23,6 +24,30 @@ from app.modules.asignacion.routes import router as asignacion_router
 from app.modules.notificaciones.routes import router as notificaciones_router
 from app.modules.admin.routes import router as admin_router
 
+# 🔥 INICIALIZACIÓN FIREBASE (Seguro para local y Render)
+import sys
+from pathlib import Path
+# Garantiza que Python encuentre la carpeta 'config/' de la raíz, 
+# sin chocar con 'app/config.py'
+PROJECT_ROOT = Path(__file__).resolve().parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# Esta importación ejecuta config/firebase_config.py automáticamente
+import config.firebase_config 
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()  # Esto asegura que los logs vayan a la consola
+    ]
+)
+
+# Forzar nivel DEBUG en loggers específicos
+for logger_name in ['app.auth.jwt_handler', 'app.dependencies', 'app.auth.oauth2']:
+    logging.getLogger(logger_name).setLevel(logging.DEBUG)
 
 def create_application() -> FastAPI:
     """Factory para crear la aplicación FastAPI"""
@@ -33,6 +58,15 @@ def create_application() -> FastAPI:
         version="1.0.0",
         docs_url="/docs",
         redoc_url="/redoc"
+    )
+    
+    # 🔥 CORS con middleware oficial (DEBE IR PRIMERO)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.BACKEND_CORS_ORIGINS,  # Ahora sí es una lista real
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     
     # Configurar CORS
@@ -69,6 +103,10 @@ def create_application() -> FastAPI:
 
 app = create_application()
 
+@app.on_event("startup")
+async def debug_cors():
+    print(f"✅ CORS ORIGINS: {settings.BACKEND_CORS_ORIGINS}")
+    print(f"✅ Tipo: {type(settings.BACKEND_CORS_ORIGINS)}")
 
 # Para desarrollo: crear tablas automáticamente (solo si no usa Alembic)
 # if settings.ENVIRONMENT == "development":

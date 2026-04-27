@@ -6,7 +6,7 @@ from typing import Optional
 from app.database import get_db
 from app.dependencies import get_current_user, require_role
 from app.modules.usuarios.models import Usuario  # ← Agregar importación de Usuario
-from app.modules.notificaciones.models import NotificacionToken, PreferenciaNotificacion
+from app.modules.notificaciones.models import NotificacionToken, PreferenciaNotificacion, HistorialNotificacion
 from app.modules.notificaciones.services import NotificationService
 
 router = APIRouter(prefix="/api/notificaciones", tags=["Notificaciones"])
@@ -120,12 +120,12 @@ async def enviar_notificacion_manual(
     usuario_id: int,
     titulo: str,
     mensaje: str,
-    current_user: Usuario = Depends(require_role(['admin'])),
+    current_user: Usuario = Depends(require_role(['administrador'])),
     db: Session = Depends(get_db)
 ):
     """Enviar notificación push manual (solo admin)"""
     # TODO: Implementar envío real
-    service = NotificationService()
+    service = NotificationService(db)
     
     # Obtener tokens activos del usuario
     tokens = db.query(NotificacionToken).filter(
@@ -134,12 +134,59 @@ async def enviar_notificacion_manual(
     ).all()
     
     resultados = []
+    exitosos = 0
+    errores = []
     for token in tokens:
-        exito = await service.send_push_notification(
-            token=token.token_fcm,
-            title=titulo,
-            body=mensaje
-        )
+        try:
+            exito = await service.send_push_notification(
+                token=token.token_fcm,
+                title=titulo,
+                body=mensaje
+            )
+            if exito:
+                exitosos += 1
+            else:
+                errores.append(f"Fallo en token {token.id}")
+        except Exception as e:
+            errores.append(f"Error en token {token.id}: {str(e)}")
         resultados.append({'token_id': token.id, 'exitoso': exito})
-    
-    return {"enviados": len([r for r in resultados if r['exitoso']]), "detalles": resultados}
+
+    estado = 'Enviada' if exitosos > 0 else 'Fallida'
+    error_detalle = '; '.join(errores) if errores else None
+
+    historial = HistorialNotificacion(
+        id_usuario=usuario_id,
+        tipo='Push',
+        titulo=titulo,
+        contenido=mensaje,
+        estado=estado,
+        error_detalle=error_detalle
+    )
+    db.add(historial)
+    db.commit()
+
+    return {"enviados": exitosos, "detalles": resultados}
+
+
+@router.patch("/{historial_id}/marcar-leida", status_code=status.HTTP_200_OK)
+async def marcar_notificacion_leida(
+    historial_id: int,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Marcar una notificación como leída desde la app móvil"""
+    historial = db.query(HistorialNotificacion).filter(
+        HistorialNotificacion.id == historial_id,
+        HistorialNotificacion.id_usuario == current_user.id
+    ).first()
+
+    if not historial:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada")
+
+    if historial.estado != 'Enviada':
+        raise HTTPException(status_code=400, detail="La notificación no está en estado enviada")
+
+    historial.estado = 'Leida'
+    db.commit()
+
+    return {"message": "Notificación marcada como leída"}

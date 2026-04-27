@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from typing import Optional, List, Union
+import logging
 
 from app.database import get_db
 from app.config import settings
@@ -11,6 +12,7 @@ from app.modules.usuarios.models import Usuario, Cliente, Taller
 from app.auth.jwt_handler import verify_token, create_access_token
 from app.core.logging_service import log_audit
 
+logger = logging.getLogger(__name__)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
@@ -25,16 +27,37 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     
+    logger.debug(f"[AUTH] Token recibido: {token[:20] if token else 'None'}...")
+    
     try:
         payload = verify_token(token)
-        user_id: int = payload.get("sub")
-        if user_id is None:
+        logger.debug(f"[AUTH] Payload decodificado: {payload}")
+        user_id_str: str = payload.get("sub")
+        logger.debug(f"[AUTH] user_id_str extraído: {user_id_str}")
+        
+        if user_id_str is None:
+            logger.warning("[AUTH] user_id_str es None en el payload")
             raise credentials_exception
-    except JWTError:
+        
+        try:
+            user_id = int(user_id_str)
+            logger.debug(f"[AUTH] user_id convertido a int: {user_id}")
+        except ValueError:
+            logger.warning(f"[AUTH] user_id_str '{user_id_str}' no es un número válido")
+            raise credentials_exception
+    except JWTError as e:
+        logger.error(f"[AUTH] Error al verificar token: {str(e)}")
         raise credentials_exception
     
     user = db.query(Usuario).filter(Usuario.id == user_id).first()
-    if user is None or not user.activo:
+    logger.debug(f"[AUTH] Usuario encontrado: {user is not None}, Activo: {user.activo if user else 'N/A'}")
+    
+    if user is None:
+        logger.warning(f"[AUTH] Usuario con id {user_id} no existe en BD")
+        raise credentials_exception
+    
+    if not user.activo:
+        logger.warning(f"[AUTH] Usuario {user.email} está inactivo")
         raise credentials_exception
     
     return user
@@ -100,12 +123,12 @@ def get_current_cliente(
     db: Session = Depends(get_db)
 ) -> Cliente:
     """Obtiene el cliente asociado al usuario"""
-    if not hasattr(current_user, 'cliente'):
+    if current_user.tipo != 'cliente':
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Solo clientes pueden acceder"
         )
-    return current_user.cliente
+    return db.query(Cliente).filter(Cliente.id_usuario == current_user.id).first()
 
 
 def get_current_taller(
@@ -113,9 +136,9 @@ def get_current_taller(
     db: Session = Depends(get_db)
 ) -> Taller:
     """Obtiene el taller asociado al usuario"""
-    if not hasattr(current_user, 'taller'):
+    if current_user.tipo != 'taller':
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Solo talleres pueden acceder"
         )
-    return current_user.taller
+    return db.query(Taller).filter(Taller.id_usuario == current_user.id).first()

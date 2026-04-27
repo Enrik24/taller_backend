@@ -16,6 +16,8 @@ from app.modules.solicitudes.models import Solicitud
 from app.modules.talleres.services import TallerService
 from app.core.logging_service import log_audit
 
+from app.modules.notificaciones.services import NotificationService
+
 router = APIRouter(prefix="/api/solicitudes", tags=["Solicitudes"])
 
 
@@ -197,7 +199,6 @@ async def get_solicitudes_disponibles(
     
     return results
 
-
 @router.post("/{solicitud_id}/aceptar", response_model=SolicitudResponse)
 async def aceptar_solicitud(
     solicitud_id: int,
@@ -210,36 +211,24 @@ async def aceptar_solicitud(
     
     solicitud = service.get_solicitud_by_id(solicitud_id)
     if not solicitud:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Solicitud no encontrada"
-        )
-    
-    # Validar que esté pendiente (comparar con el valor del enum)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solicitud no encontrada")
+        
     if solicitud.estado != EstadoSolicitudEnum.PENDIENTE.value:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La solicitud no está en estado Pendiente"
-        )
-    
-    # Validar que el taller tenga al menos 1 técnico disponible (Regla de negocio #7)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La solicitud no está en estado Pendiente")
+        
     if not taller_service.has_available_tecnico(current_taller.id_usuario):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El taller debe tener al menos 1 técnico disponible para aceptar solicitudes"
-        )
-    
-    # Asignar taller (el sistema podría asignar técnico automáticamente o dejarlo para después)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El taller debe tener al menos 1 técnico disponible para aceptar solicitudes")
+        
+    # Asignar taller y cambiar estado a "En proceso"
     solicitud = service.asignar_taller(solicitud, current_taller.id_usuario)
-    
     db.commit()
     db.refresh(solicitud)
     
-    # TODO: Notificar al cliente vía push
-    # notification_service.notify_cliente_solicitud_aceptada(solicitud)
+    # 🔔 NOTIFICACIÓN PUSH AL CLIENTE
+    notif_service = NotificationService(db)
+    await notif_service.notify_cliente_solicitud_aceptada(solicitud)
     
     return SolicitudResponse.model_validate(solicitud)
-
 
 @router.post("/{solicitud_id}/rechazar")
 async def rechazar_solicitud(
@@ -284,46 +273,29 @@ async def actualizar_estado_servicio(
     
     solicitud = service.get_solicitud_by_id(solicitud_id)
     if not solicitud:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Solicitud no encontrada"
-        )
-    
-    # Validar que el taller sea el asignado
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solicitud no encontrada")
+        
     if solicitud.id_taller != current_taller.id_usuario:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No tiene permiso para actualizar esta solicitud"
-        )
-    
-    # Validar transiciones de estado permitidas
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tiene permiso para actualizar esta solicitud")
+        
     estado_actual = solicitud.estado
     nuevo_estado_str = nuevo_estado.value
     
-    # Reglas de transición
     transiciones_permitidas = {
         EstadoSolicitudEnum.PENDIENTE.value: [EstadoSolicitudEnum.EN_PROCESO.value, EstadoSolicitudEnum.ATENDIDO.value],
         EstadoSolicitudEnum.EN_PROCESO.value: [EstadoSolicitudEnum.ATENDIDO.value],
-        EstadoSolicitudEnum.ATENDIDO.value: []  # Terminal
+        EstadoSolicitudEnum.ATENDIDO.value: []
     }
     
     if nuevo_estado_str not in transiciones_permitidas.get(estado_actual, []):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Transición de estado inválida: no se puede pasar de {estado_actual} a {nuevo_estado_str}"
-        )
-    
-    # Actualizar estado
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Transición de estado inválida: no se puede pasar de {estado_actual} a {nuevo_estado_str}")
+        
     solicitud.estado = nuevo_estado_str
     db.commit()
     db.refresh(solicitud)
     
-    # Si se marca como atendido, habilitar pago
-    if solicitud.estado == EstadoSolicitudEnum.ATENDIDO.value:
-        # TODO: Crear intención de pago o notificar al cliente
-        pass
-    
-    # TODO: Notificar al cliente del cambio de estado
-    # notification_service.notify_estado_actualizado(solicitud)
+    # 🔔 NOTIFICACIÓN PUSH DE CAMBIO DE ESTADO
+    notif_service = NotificationService(db)
+    await notif_service.notify_estado_actualizado(solicitud)
     
     return SolicitudResponse.model_validate(solicitud)

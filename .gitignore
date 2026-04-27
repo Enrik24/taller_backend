@@ -48,3 +48,9 @@ temp/
 # Archivos de migration de Alembic (pueden requerir ajustes)
 alembic/versions/*.py
 !alembic/versions/.gitkeep
+
+# Seguridad
+.env
+firebase-service-account.json
+*.json  # (opcional, si quieres ignorar todos los JSON sueltos)
+firebase-service-account.json

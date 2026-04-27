@@ -4,6 +4,11 @@ from sqlalchemy.sql import func
 from app.database import Base
 import enum
 
+# ✅ Import opcional con TYPE_CHECKING para evitar circular imports
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from app.modules.solicitudes.models import Solicitud
+
 
 # Tablas intermedias
 usuario_rol = Table(
@@ -35,10 +40,24 @@ class Usuario(Base):
     # Relaciones
     roles = relationship('Rol', secondary=usuario_rol, back_populates='usuarios')
     
+    # ✅ RELACIÓN CON TOKENS DE NOTIFICACIÓN (AGREGADA)
+    tokens_notificacion = relationship(
+        'NotificacionToken',
+        back_populates='usuario',
+        cascade='all, delete-orphan'
+    )
+
+    # ✅ RELACIÓN CON HISTORIAL DE NOTIFICACIONES (AGREGADA)
+    historial_notificaciones = relationship(
+        'HistorialNotificacion',
+        back_populates='usuario'
+    )
+    
     # Herencia: discriminator para Class Table Inheritance
     __mapper_args__ = {
         'polymorphic_identity': 'usuario',
-        'polymorphic_on': 'tipo'
+        'polymorphic_on': 'tipo',
+        'with_polymorphic': '*'
     }
     
     @declared_attr
@@ -47,6 +66,13 @@ class Usuario(Base):
     
     # Relación inversa para bitácora
     bitacoras = relationship('Bitacora', back_populates='usuario')
+
+
+class Administrador(Usuario):
+    """Representa a un usuario administrador sin tabla separada"""
+    __mapper_args__ = {
+        'polymorphic_identity': 'administrador',
+    }
 
 
 class Cliente(Usuario):
@@ -69,7 +95,7 @@ class Taller(Usuario):
     __tablename__ = 'taller'
     
     id_usuario = Column(Integer, ForeignKey('usuario.id'), primary_key=True)
-    nombre_comercial = Column(String(150), nullable=False)
+    nombre_comercial = Column(String(150), nullable=True)
     direccion = Column(Text, nullable=True)
     latitud = Column(Numeric(9, 6), nullable=True)
     longitud = Column(Numeric(9, 6), nullable=True)
@@ -145,11 +171,14 @@ class Bitacora(Base):
     id_usuario = Column(Integer, ForeignKey('usuario.id'), nullable=True)
     fecha_hora = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     accion = Column(String(100), nullable=False)
-    descripcion = Column(Text, nullable=True)
     ip_origen = Column(String(45), nullable=True)
     entidad_afectada = Column(String(100), nullable=True)
     
     # Relaciones
     usuario = relationship('Usuario', back_populates='bitacoras')
 
-    from app.modules.solicitudes.models import Solicitud
+
+# Importar modelos relacionados para asegurar que estén registrados antes de configurar mappers
+from app.modules.notificaciones.models import NotificacionToken  # noqa
+from app.modules.solicitudes.models import Solicitud  # noqa
+from app.modules.pagos.models import Pago  # noqa

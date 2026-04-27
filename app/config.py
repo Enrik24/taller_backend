@@ -1,9 +1,18 @@
-from pydantic_settings import BaseSettings
+# app/config.py
+from pydantic_settings import BaseSettings, SettingsConfigDict  # ← Importa SettingsConfigDict
 from typing import List, Optional
 from functools import lru_cache
 
 
 class Settings(BaseSettings):
+    # 🔥 Config nueva para Pydantic v2
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        # ✅ Esto permite parsear listas desde el .env
+        env_nested_delimiter="__",  # Opcional: para variables anidadas
+    )
+    
     # Database
     DB_NAME: str
     DB_USER: str
@@ -30,16 +39,12 @@ class Settings(BaseSettings):
     FIREBASE_CREDENTIALS_PATH: Optional[str] = None
 
     # App
-    BACKEND_CORS_ORIGINS: List[str]
+    BACKEND_CORS_ORIGINS: List[str]  # ← Pydantic v2 parsea esto automáticamente
     ENVIRONMENT: str = "development"
 
     # Security
     MAX_LOGIN_ATTEMPTS: int = 3
     COMMISSION_PERCENTAGE: float = 10.00
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
 
     @property
     def DATABASE_URL(self) -> str:
