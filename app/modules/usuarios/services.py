@@ -20,11 +20,22 @@ class UserService:
         return self.repo.get_user_by_id(user_id)
     
     def create_user(self, user_data: UserCreate) -> Usuario:
-        # Hashear contraseña
-        user_dict = user_data.model_dump()
+        # Serializar a dict con valores JSON-friendly (strings, no objetos Enum)
+        user_dict = user_data.model_dump(mode='json')
+        
+        # Mover password a password_hash
         user_dict['password_hash'] = get_password_hash(user_dict.pop('password'))
         
+        # Limpiar campos que NO son columnas de SQLAlchemy
+        user_dict.pop('rol_ids', None)
+        user_dict.pop('confirmar_password', None)
+        
+        # Asegurar que tipo sea string plano
+        if hasattr(user_dict.get('tipo'), 'value'):
+            user_dict['tipo'] = user_dict['tipo'].value
+        
         return self.repo.create_user(user_dict)
+
     
     def update_user(self, user: Usuario, update_data: UserUpdate) -> Usuario:
         update_dict = {k: v for k, v in update_data.model_dump(exclude_unset=True).items() if v is not None}

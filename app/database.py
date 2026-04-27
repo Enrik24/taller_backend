@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from sqlalchemy.orm import sessionmaker, declarative_base, Session, configure_mappers
 from app.config import settings
 
 engine = create_engine(
@@ -26,3 +26,6 @@ def get_db() -> Session:
 # Helper para crear tablas (solo desarrollo)
 def init_db():
     Base.metadata.create_all(bind=engine)
+
+# Fuerza la configuración de todos los mappers (relaciones)
+configure_mappers()

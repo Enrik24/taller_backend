@@ -12,6 +12,8 @@ from app.modules.solicitudes.models import Solicitud  # ← Agregar importación
 from app.modules.solicitudes.schemas import EstadoSolicitudEnum  # ← Importar desde schemas
 from app.config import settings
 
+from app.modules.notificaciones.services import NotificationService
+
 router = APIRouter(prefix="/api/pagos", tags=["Pagos"])
 
 
@@ -85,14 +87,13 @@ async def stripe_webhook(
     pago = service.handle_webhook(payload, stripe_signature)
     
     if pago is None:
-        # Evento no procesado o error de firma
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Webhook no procesado"
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Webhook no procesado")
+        
+    # 🔔 NOTIFICACIÓN PUSH DE PAGO EXITOSO
+    notif_service = NotificationService(db)
+    await notif_service.notify_pago_completado(pago)
     
     return {"status": "success", "pago_id": pago.id}
-
 
 @router.get("/{solicitud_id}/comprobante")
 async def obtener_comprobante_pago(
@@ -113,7 +114,7 @@ async def obtener_comprobante_pago(
     # Verificar permisos
     solicitud = pago.solicitud
     # Verificar si es admin (verificar roles)
-    is_admin = any(role.nombre == 'admin' for role in current_user.roles) if current_user.roles else False
+    is_admin = any(role.nombre == 'administrador' for role in current_user.roles) if current_user.roles else False
     
     if (solicitud.id_cliente != current_user.id and 
         (not hasattr(current_user, 'taller') or current_user.id != solicitud.id_taller) and 

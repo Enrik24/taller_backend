@@ -16,39 +16,47 @@ class UserRepository:
         return self.db.query(Usuario).filter(Usuario.email == email).first()
     
     def create_user(self, user_data: dict) -> Usuario:
-        # Crear usuario base
-        user = Usuario(
-            nombre=user_data['nombre'],
-            email=user_data['email'],
-            password_hash=user_data['password_hash'],
-            tipo=user_data['tipo']
-        )
-        self.db.add(user)
-        self.db.flush()  # Obtener ID antes de crear hijo
+        tipo = user_data.get('tipo')
         
-        # Crear entidad hija según tipo
-        if user_data['tipo'] == 'cliente':
-            cliente = Cliente(
-                id_usuario=user.id,
+        # Crear directamente la subclase para que SQLAlchemy maneje la herencia correctamente
+        if tipo == 'cliente':
+            user = Cliente(
+                nombre=user_data['nombre'],
+                email=user_data['email'],
+                password_hash=user_data['password_hash'],
+                tipo='cliente',
                 telefono=user_data.get('telefono'),
                 direccion_default=user_data.get('direccion_default')
             )
-            self.db.add(cliente)
-        elif user_data['tipo'] == 'taller':
-            taller = Taller(
-                id_usuario=user.id,
-                nombre_comercial=user_data['nombre_comercial'],
+        elif tipo == 'taller':
+            user = Taller(
+                nombre=user_data['nombre'],
+                email=user_data['email'],
+                password_hash=user_data['password_hash'],
+                tipo='taller',
+                nombre_comercial=user_data.get('nombre_comercial'),
                 direccion=user_data.get('direccion'),
                 latitud=user_data.get('latitud'),
                 longitud=user_data.get('longitud')
             )
-            self.db.add(taller)
+        else:
+            user = Usuario(
+                nombre=user_data['nombre'],
+                email=user_data['email'],
+                password_hash=user_data['password_hash'],
+                tipo=tipo
+            )
+        
+        self.db.add(user)
+        self.db.flush()  # Obtener el ID generado
         
         # Asignar rol por defecto
-        default_role = self.db.query(Rol).filter(Rol.nombre == user_data['tipo']).first()
+        default_role = self.db.query(Rol).filter(Rol.nombre == tipo).first()
         if default_role:
             user.roles.append(default_role)
         
+        self.db.commit()
+        self.db.refresh(user)
         return user
     
     def update_user(self, user: Usuario, update_data: dict) -> Usuario:

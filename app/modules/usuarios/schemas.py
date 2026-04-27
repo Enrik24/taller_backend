@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
 from enum import Enum
 
@@ -7,7 +9,12 @@ from enum import Enum
 class RoleEnum(str, Enum):
     CLIENTE = "cliente"
     TALLER = "taller"
-    ADMIN = "admin"
+    ADMIN = "administrador"
+
+
+class LoginRequest(BaseModel):
+    username: EmailStr
+    password: str
 
 
 # Schemas base
@@ -29,6 +36,7 @@ class UserCreate(BaseModel):
     direccion: Optional[str] = None
     latitud: Optional[float] = Field(None, ge=-90, le=90)
     longitud: Optional[float] = Field(None, ge=-180, le=180)
+    rol_ids: Optional[List[int]] = []
     
     @field_validator('password')
     @classmethod
@@ -40,12 +48,18 @@ class UserCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     nombre: Optional[str] = Field(None, min_length=2, max_length=100)
+    email: Optional[EmailStr] = None
     telefono: Optional[str] = Field(None, max_length=20)
     direccion_default: Optional[str] = None
     nombre_comercial: Optional[str] = Field(None, max_length=150)
     direccion: Optional[str] = None
     latitud: Optional[float] = Field(None, ge=-90, le=90)
     longitud: Optional[float] = Field(None, ge=-180, le=180)
+    password: Optional[str] = Field(None, min_length=8)
+
+
+class UserRolesUpdate(BaseModel):
+    rol_ids: List[int]
 
 
 class Token(BaseModel):
@@ -66,7 +80,8 @@ class RoleResponse(BaseModel):
     id: int
     nombre: str
     descripcion: Optional[str] = None
-    
+    permisos: List[PermissionResponse] = []
+
     class Config:
         from_attributes = True
 
@@ -75,8 +90,8 @@ class PermissionResponse(BaseModel):
     id: int
     codigo: str
     nombre: str
-    accion: str
-    
+    descripcion: str
+
     class Config:
         from_attributes = True
 
@@ -88,13 +103,14 @@ class UserResponse(BaseModel):
     fecha_registro: datetime
     activo: bool
     roles: List[RoleResponse] = []
+    tipo: str = "usuario"
     
     class Config:
         from_attributes = True
 
 
 class ClienteResponse(UserResponse):
-    tipo: str = "cliente"
+    tipo: Literal["cliente"] = "cliente"
     telefono: Optional[str] = None
     direccion_default: Optional[str] = None
     
@@ -103,8 +119,8 @@ class ClienteResponse(UserResponse):
 
 
 class TallerResponse(UserResponse):
-    tipo: str = "taller"
-    nombre_comercial: str
+    tipo: Literal["taller"] = "taller"
+    nombre_comercial: Optional[str] = None
     direccion: Optional[str] = None
     latitud: Optional[float] = None
     longitud: Optional[float] = None
@@ -170,3 +186,54 @@ class TecnicoResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+
+# Roles
+class RoleCreate(BaseModel):
+    nombre: str = Field(..., min_length=2, max_length=50)
+    descripcion: Optional[str] = Field(None, max_length=255)
+    permiso_ids: Optional[List[int]] = []
+
+
+class RoleUpdate(BaseModel):
+    nombre: Optional[str] = Field(None, min_length=2, max_length=50)
+    descripcion: Optional[str] = Field(None, max_length=255)
+
+
+class PermisoIdsUpdate(BaseModel):
+    permiso_ids: List[int]
+
+
+class PermisoCreate(BaseModel):
+    codigo: str = Field(..., min_length=2, max_length=50)
+    nombre: str = Field(..., min_length=2, max_length=100)
+    descripcion: str = Field(..., max_length=250)
+
+
+class PermisoUpdate(BaseModel):
+    codigo: Optional[str] = Field(None, min_length=2, max_length=50)
+    nombre: Optional[str] = Field(None, min_length=2, max_length=100)
+    descripcion: Optional[str] = Field(None, max_length=250)
+
+
+"""nuevos esquemas para registro desde web y app"""
+class TallerWebRegister(BaseModel):
+    nombre: str = Field(..., min_length=2, max_length=100)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    confirmar_password: str = Field(..., min_length=8)
+    telefono: Optional[str] = Field(None, max_length=20)
+    direccion_default: Optional[str] = None
+    nombre_comercial: Optional[str] = Field(None, max_length=150)
+    direccion: Optional[str] = None
+    latitud: Optional[float] = Field(None, ge=-90, le=90)
+    longitud: Optional[float] = Field(None, ge=-180, le=180)
+
+
+class ClienteAppRegister(BaseModel):
+    nombre: str = Field(..., min_length=2, max_length=100)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    confirmar_password: str = Field(..., min_length=8)
+    telefono: Optional[str] = Field(None, max_length=20)
+    direccion_default: Optional[str] = None
