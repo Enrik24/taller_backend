@@ -16,7 +16,7 @@ class EspecialidadTaller(Base):
     nivel_experiencia = Column(String(20), default='Intermedio')  # Básico, Intermedio, Experto
     
     # Relaciones
-    taller = relationship('Taller', back_populates='especialidades')
+    taller = relationship('Taller', foreign_keys=[id_taller])
 
 
 # Agregar relación inversa en Taller (se haría en usuarios/models.py o vía back_populates)
