@@ -29,6 +29,7 @@ eggs/
 
 # Archivos de entorno
 .env
+.env copy
 .env.local
 *.env
 
